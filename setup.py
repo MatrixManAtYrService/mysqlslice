@@ -11,9 +11,9 @@ setup(name='mysqlslice',
       entry_points={'console_scripts' : [
 
           # sync data remote -> local
-          'pull_slice = slice.slice:pull',
+          'pull_slice = mysqlslice.slice:pull',
 
           # sync schema remote -> local
-          'pull_schema = slice.schema:pull'
+          'pull_schema = mysqlslice.schema:pull'
 
           ]})

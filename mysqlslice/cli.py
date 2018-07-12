@@ -5,7 +5,7 @@ import subprocess
 import os
 import re
 from sh import bash, awk, netstat, mysql
-from bslice.mysql import LocalArgs, RemoteArgs
+from mysqlslice.mysql import LocalArgs, RemoteArgs
 
 # Printing Messages to the Caller
 # ===============================
@@ -58,7 +58,7 @@ def parse_pull_args(desc=None):
     dl_password = 'test'
 
     # try to determine the mysql socket path
-    dl_docket = ""
+    dl_socket = ""
     if "linux" in sys.platform:
         dl_socket= str(awk(netstat('-ln'), '/mysql(.*)?\.sock/ { print $9 }')).strip()
     elif sys.platform == "darwin":

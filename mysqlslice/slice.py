@@ -1,5 +1,10 @@
 #! /usr/bin/env python3
 
+from mysqlslice.cli import parse_pull_args, Prindenter, Indent, mysqldump_data_remote_batches,\
+                       mysqldump_data_remote, mysqlload_local, show_do_query
+
+from mysqlslice.mysql import LocalConnection, LocalArgs, RemoteConnection, RemoteArgs
+
 # different tables may require different functionality for syncing
 # e.g. an insert-only table can rely on the 'id' column exclusively
 # while others may need to keep track of modified_time or somesuch
@@ -20,11 +25,6 @@ def get_steps(local_args, remote_connection, printer=Prindenter()):
             # this table gets new rows only, so we can just sync via max(id)
             'baz' : lambda : pull_missing_ids(local_args, remote_connection, printer=printer),
             }
-
-from bslice.cli import parse_pull_args, Prindenter, Indent, mysqldump_data_remote_batches,\
-                       mysqldump_data_remote, mysqlload_local, show_do_query
-
-from bslice.mysql import LocalConnection, LocalArgs, RemoteConnection, RemoteArgs
 
 # global to this module, will be populated when main() is called
 # contains cli args
@@ -114,7 +114,7 @@ def main(args):
     printer('Syncing {} to localhost'.format(args.remote_host))
 
     # defer local connection setup
-    local_args = LocalArgs(args.local_user, args.local_password, args.local_database)
+    local_args = LocalArgs(args.local_user, args.local_password, args.local_database, args.local_socket)
 
     # set up remote connection
     remote_args = RemoteArgs(args.remote_host, args.remote_user, args.remote_password, args.remote_database, 'DHE-RSA-AES256-SHA')

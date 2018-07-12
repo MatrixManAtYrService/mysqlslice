@@ -9,6 +9,7 @@ class LocalArgs:
 
 class RemoteArgs:
     def __init__(self, host, user, password, database, cipher=None):
+        self.host = host
         self.user = user
         self.password = password
         self.database = database
@@ -70,7 +71,7 @@ class RemoteConnection(Connection):
         self.connection = pymysql.connect(host=self.args.host,
                                           user=self.args.user,
                                           passwd=self.args.password,
-                                          ssl=ssl
+                                          ssl=ssl,
                                           cursorclass=pymysql.cursors.DictCursor)
 
         # store this explicitly since it doesn't get populated on connection
