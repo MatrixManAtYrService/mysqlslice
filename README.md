@@ -18,3 +18,4 @@ To run the sample:
     
 
 
+pull_slice -u root -p test --remote-host 127.0.0.1

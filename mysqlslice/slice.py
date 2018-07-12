@@ -23,7 +23,7 @@ def get_steps(local_args, remote_connection, printer=Prindenter()):
 #            'bar' : lambda : full_sync(local_args, remote_connection, printer=printer),
 
             # this table gets new rows only, so we can just sync via max(id)
-            'baz' : lambda : pull_missing_ids(local_args, remote_connection, printer=printer),
+            'baz' : lambda : pull_missing_ids('baz', local_args, remote_connection, printer=printer),
             }
 
 # global to this module, will be populated when main() is called
@@ -117,7 +117,17 @@ def main(args):
     local_args = LocalArgs(args.local_user, args.local_password, args.local_database, args.local_socket)
 
     # set up remote connection
-    remote_args = RemoteArgs(args.remote_host, args.remote_user, args.remote_password, args.remote_database, 'DHE-RSA-AES256-SHA')
+    remote_args = RemoteArgs(args.remote_host, args.remote_user, args.remote_password, args.remote_database)
+
+    if hasattr(args, 'cipher'):
+        remote_args = RemoteArgs(args.remote_host, args.remote_user, args.remote_password, 
+                                 args.remote_database, cipher=args.cipher)
+    else:
+        remote_args = RemoteArgs(args.remote_host, args.remote_user, args.remote_password, 
+                                 args.remote_database)
+
+    printer('connecting with:')
+    printer(remote_args.__dict__)
     with RemoteConnection(remote_args) as remote_connection, Indent(printer):
 
         # do the sync-steps for each table in the slice

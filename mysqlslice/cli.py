@@ -160,7 +160,7 @@ def mysqldump_data_remote_batches(slice_args, table_name, batch_size, max_id,
 
             # modify the condition for a smaller dump
             if condition:
-                restricted_condition = condition + " and id >= {} and id =< {}".format(interval[0], interval[1])
+                restricted_condition = condition + " and id >= {} and id <= {}".format(interval[0], interval[1])
             else:
                 restricted_condition = "id >= {} and id <= {}".format(interval[0], interval[1])
 
