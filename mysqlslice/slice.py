@@ -1,28 +1,30 @@
 #! /usr/bin/env python3
 
-from mysqlslice.cli import parse_pull_args, Prindenter, Indent, mysqldump_data_remote_batches,\
-                       mysqldump_data_remote, mysqlload_local, show_do_query
+from mysqlslice.cli import parse_pull_args, Prindenter, Indent
 
 from mysqlslice.mysql import LocalConnection, LocalArgs, RemoteConnection, RemoteArgs
 
+from mysqlslice.sync import general_sync, pull_foo, pull_missing_ids
+
+
 # different tables may require different functionality for syncing
-# e.g. an insert-only table can rely on the 'id' column exclusively
-# while others may need to keep track of modified_time or somesuch
-#
 # map that functionality on a table-by-table basis here
 def get_steps(local_args, remote_connection, printer=Prindenter()):
 
     return {
             # this table gets it's own sync function
-            'foo_tokens' : lambda : pull_foo(local_args, remote_connection, printer=printer),
+            'foo_tokens' : lambda : pull_foo(local_args, remote_connection, printer=printer)
 
             # this table also handled by pull_foo
-            'foo_ref'    : None, 
-            
-#            # this table experiences modifications and deletions, so it needs a full sync
-#            'bar' : lambda : full_sync(local_args, remote_connection, printer=printer),
+            'foo_ref'    : None,
 
-            # this table gets new rows only, so we can just sync via max(id)
+            # this table experiences INSERTs, DELETEs, and UPDATEs, so it needs a full sync
+            #      based on its size, we'll sync it in batches of 15
+            #      too large means we spend less time finding the changes and more time moving data
+            #      too small means we spend more time finding the changes and less time moving data
+            'bar' : lambda : general_sync('bar', 15, local_args, remote_connection, printer=printer),
+
+            # this table only experiences INSERTs, so we can just sync via max(id)
             'baz' : lambda : pull_missing_ids('baz', local_args, remote_connection, printer=printer),
             }
 
@@ -30,83 +32,8 @@ def get_steps(local_args, remote_connection, printer=Prindenter()):
 # contains cli args
 cli_args = None
 
-# On a server I know, remote connections get axed if they take too long
-# pull this many rows per connection to fly under the radar
-batch_rows = 50 # this is artificially low, you'll probably want to increase it
-# I use 100000
 
-# this logic assumes that only certain rows in foo_ref and foo_tokens actually need to be synced
-def pull_foo(local_args, remote_connection, printer=Prindenter()):
 
-    # grab only the foo token indices that are relevant
-    with remote_connection.cursor() as remote_cursor:
-
-        get_ids = '''select name, foo_token_id from foo_ref where name like 'relevant%';'''
-
-        result = show_do_query(remote_cursor, get_ids, printer=printer)
-        foo_token_ids =  ', '.join([str(x['foo_token_id']) for x in result])
-        foo_ref_ids =  ', '.join([str(x['id']) for x in result])
-
-    # dump just those rows
-    mysqldump_data_remote(cli_args, 'foo_ref', 'id in ({});'.format(foo_ref_ids), printer=printer)
-    mysqldump_remote(cli_args, 'foo_tokens', 'id in ({});'.format(foo_token_ids), printer=printer)
-
-    # clear old rows
-    with LocalConnection(local_args) as local_connection:
-        with local_connection.cursor() as cursor:
-
-            show_do_query(cursor, 'truncate foo_ref;', printer=printer)
-            show_do_query(cursor, 'truncate foo_tokens;', printer=printer)
-
-    # load new rows
-    mysqlload_local(cli_args, 'foo_ref', printer=printer)
-    mysqlload_local(cli_args, 'foo_tokens', printer=printer)
-
-# this works for tables that only experience INSERTs, it just checks on max(id)
-# and syncs the deficit
-def pull_missing_ids(table_name, local_args, remote_connection, printer=Prindenter()):
-
-    global cli_args
-    target = 'max(id)';
-    get_max_id = 'select {} from {};'.format(target, table_name)
-
-    # main() doesn't pass-in a local connection because if the connection is held open
-    # then mysqlload_local (below) can't make its own separate connection
-    with LocalConnection(local_args) as local_connection:
-        with local_connection.cursor() as cursor:
-            result = show_do_query(cursor, get_max_id, printer=printer)
-            begin = result[0][target]
-
-    with remote_connection.cursor() as cursor:
-        result = show_do_query(cursor, get_max_id, printer=printer)
-        end = result[0][target]
-
-    if end != begin:
-
-        # dump to a file
-        if begin == None:
-            # if the target table is empty, dump everything
-            mysqldump_data_remote_batches(cli_args,
-                                          table_name,
-                                          batch_rows,
-                                          end,
-                                          min_id=begin,
-                                          printer=printer)
-        else:
-            # otherwise, dump just the rows that aren't in the target
-            mysqldump_data_remote_batches(cli_args,
-                                          table_name,
-                                          batch_rows,    # batch size
-                                          end,           # max id
-                                          min_id=begin,
-                                          condition='id > {}'.format(begin),
-                                          printer=printer)
-
-        # load from a file
-        mysqlload_local(cli_args, table_name, printer=printer)
-
-    else:
-        printer("nothing to do")
 
 def main(args):
     printer = Prindenter(indent=0)
@@ -120,10 +47,10 @@ def main(args):
     remote_args = RemoteArgs(args.remote_host, args.remote_user, args.remote_password, args.remote_database)
 
     if hasattr(args, 'cipher'):
-        remote_args = RemoteArgs(args.remote_host, args.remote_user, args.remote_password, 
+        remote_args = RemoteArgs(args.remote_host, args.remote_user, args.remote_password,
                                  args.remote_database, cipher=args.cipher)
     else:
-        remote_args = RemoteArgs(args.remote_host, args.remote_user, args.remote_password, 
+        remote_args = RemoteArgs(args.remote_host, args.remote_user, args.remote_password,
                                  args.remote_database)
 
     printer('connecting with:')

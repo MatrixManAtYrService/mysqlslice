@@ -1,4 +1,4 @@
-
+This is a proof of concept / project template.  The idea is that since general-purpose database sync tools don't know your data, they can't make sync optimizations that you can.  This project syncs two databases
 
 To run the sample:
 
@@ -15,7 +15,7 @@ To run the sample:
 
     # prepare the sync entrypoints
     python setup.py develop
-    
+
 
 
 pull_slice -u root -p test --remote-host 127.0.0.1

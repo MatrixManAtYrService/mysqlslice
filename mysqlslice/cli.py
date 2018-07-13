@@ -54,7 +54,7 @@ def parse_pull_args(desc=None):
 
     # some defaults for the local database
     dl_user = 'root'
-    dl_database = 'things_one'
+    dl_database = 'things_downstream'
     dl_password = 'test'
 
     # try to determine the mysql socket path
@@ -70,7 +70,7 @@ def parse_pull_args(desc=None):
 
     # some defaults for the remote database
     # typically this would be a remote server--using localhost for testing
-    dr_database = 'things_two'
+    dr_database = 'things_upstream'
     dr_user = 'root'
     dr_password = 'test'
     dr_host = '127.0.0.1'
