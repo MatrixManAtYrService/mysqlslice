@@ -9,11 +9,11 @@ from mysqlslice.sync import general_sync, pull_foo, pull_missing_ids
 
 # different tables may require different functionality for syncing
 # map that functionality on a table-by-table basis here
-def get_steps(local_args, remote_connection, printer=Prindenter()):
+def get_steps(cli_args, local_args, remote_connection, printer=Prindenter()):
 
     return {
             # this table gets it's own sync function
-            'foo_tokens' : lambda : pull_foo(local_args, remote_connection, printer=printer)
+            'foo_tokens' : lambda : pull_foo(cli_args, local_args, remote_connection, printer=printer),
 
             # this table also handled by pull_foo
             'foo_ref'    : None,
@@ -22,17 +22,12 @@ def get_steps(local_args, remote_connection, printer=Prindenter()):
             #      based on its size, we'll sync it in batches of 15
             #      too large means we spend less time finding the changes and more time moving data
             #      too small means we spend more time finding the changes and less time moving data
-            'bar' : lambda : general_sync('bar', 15, local_args, remote_connection, printer=printer),
+            #      consider network bandwith vs how precious server cpu time is
+            'bar' : lambda : general_sync('bar', 15, cli_args, local_args, remote_connection, printer=printer),
 
             # this table only experiences INSERTs, so we can just sync via max(id)
-            'baz' : lambda : pull_missing_ids('baz', local_args, remote_connection, printer=printer),
+            'baz' : lambda : pull_missing_ids('baz', cli_args, local_args, remote_connection, printer=printer),
             }
-
-# global to this module, will be populated when main() is called
-# contains cli args
-cli_args = None
-
-
 
 
 def main(args):
@@ -58,11 +53,16 @@ def main(args):
     with RemoteConnection(remote_args) as remote_connection, Indent(printer):
 
         # do the sync-steps for each table in the slice
-        for table_name, sync_func in get_steps(local_args, remote_connection, printer).items():
+        for table_name, sync_func in get_steps(args, local_args, remote_connection, printer).items():
             printer('[Table: {}]'.format(table_name))
             with Indent(printer):
                 if sync_func:
                     sync_func()
+                    printer("")
+                else:
+                    with Indent(printer):
+                        printer("skipped")
+                        printer("")
 
     printer('Done')
 

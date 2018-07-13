@@ -11,7 +11,7 @@ from mysqlslice.mysql import LocalConnection, LocalArgs, RemoteConnection, Remot
 batch_rows = 100000
 
 # this logic assumes that only certain rows in foo_ref and foo_tokens actually need to be synced
-def pull_foo(local_args, remote_connection, printer=Prindenter()):
+def pull_foo(cli_args, local_args, remote_connection, printer=Prindenter()):
 
     # grab only the foo token indices that are relevant
     with remote_connection.cursor() as remote_cursor:
@@ -37,27 +37,24 @@ def pull_foo(local_args, remote_connection, printer=Prindenter()):
     mysqlload_local(cli_args, 'foo_ref', printer=printer)
     mysqlload_local(cli_args, 'foo_tokens', printer=printer)
 
-def md5_row_range(cursor, table_name, interval, id_col='id', printer=Prindenter()):
+# not all columns can be concatenated (i.e. NULL)
+# this gets the list of columns and figures out how to make them concatenatabale
+def examine_columns(cursor, table_name, printer=Prindenter()):
 
-    printer("[Fingerprinting " + table_name
-             + ".{table_name} across rows where {id_col} in {interval}]".format(**vars()))
-
+    printer("[Examining Columns on {}.{}]".format(cursor.connection.db, table_name))
     with Indent(printer):
         result = show_do_query(cursor,
-                               "SELECT COLUMN_NAME, IS_NULLABLE, COLUMN_TYPE, COLLATION_NAME "
-                                + "FROM information_schema.columns "
-                                + "WHERE table_schema='{}' ".format(cursor.connection.database)
-                                + "AND table_name='{}';".format(table_name),
-                               printer=printer)
+                """
+                SELECT COLUMN_NAME, IS_NULLABLE, COLUMN_TYPE, COLLATION_NAME
+                FROM information_schema.columns
+                WHERE table_schema='{}'
+                AND table_name='{}';
+                """.format(cursor.connection.db, table_name),
+                printer=printer)
 
-        column_names = []
         column_conversions= []
 
         for column in result:
-
-            # keep track of the raw names
-            name = column['COLUMN_NAME']
-            column_names.append(name)
 
             # make the column representation concatenate-friendly
             converted = column['COLUMN_NAME']
@@ -65,16 +62,24 @@ def md5_row_range(cursor, table_name, interval, id_col='id', printer=Prindenter(
             if column['IS_NULLABLE'] == 'YES':
                 converted = "IFNULL({}, 'NULL')".format(converted)
 
-            if column['COLLATION_NAME'] not in ['NULL', 'utf8_general_ci']:
+            if column['COLLATION_NAME'] and column['COLLATION_NAME'] not in ['NULL', 'utf8_general_ci']:
                 converted = "BINARY {}".format(converted)
 
             # your data may deviate in new and exciting ways
             # handle them here ...
 
-            column_conversions.append('{} as {}'.format(converted, name))
+            with Indent(printer):
+                printer(converted)
+            column_conversions.append(converted)
 
-        # column names for the target table
-        columns_str = ",".join(column_names)
+        return column_conversions
+
+
+def md5_row_range(cursor, table_name, column_conversions, interval, id_col='id', printer=Prindenter()):
+
+    printer("[Fingerprinting " + cursor.connection.db
+             + ".{table_name} across rows where {id_col} in {interval}]".format(**vars()))
+    with Indent(printer):
 
         # concat-friendly conversions for the target table
         converted_columns_str = ",".join(column_conversions)
@@ -82,20 +87,28 @@ def md5_row_range(cursor, table_name, interval, id_col='id', printer=Prindenter(
         # hash the row-range
         start = interval.start
         end = interval.end
-        result = show_do_query(cursor,
-                               "SELECT md5(group_concat(" + columns_str + ")) as fingerprint from"
-                               + "  (select " + converted_columns_str + " from " + table_name
-                               + "   where {id_col} >= {begin} and {id_col} < {end}".format(**vars())
-                               + "   order by id) as " + table_name
-                               + " GROUP BY 1 = 1;", # this is dumb, but I don't know how to dispense with it
-                               printer=printer)
 
-        return result[0]['fingerprint']
+        condition = "{id_col} >= {start} AND {id_col} < {end}".format(**vars())
+
+        result = show_do_query(cursor,
+                """
+                SELECT MD5(GROUP_CONCAT(row_fingerprints)) AS range_fingerprint from
+                    (SELECT MD5(CONCAT({})) as row_fingerprints
+                    FROM {}
+                    WHERE {}
+                    ORDER BY {}) as r;
+                """.format(converted_columns_str,
+                           table_name,
+                           condition,
+                           id_col),
+                printer=printer)
+
+        return result[0]['range_fingerprint']
 
 # row sync relies on group_concat, which silently truncates the output once it reaches
 # group_concat_max_len bytes long.
 # Interrogate the target server to see how many rows we can get away with.
-def get_max_md5_rows(cursor, try_set=1000001 * 33, printer=Prindenter()):
+def get_max_md5_rows(cursor, try_set=1000000 * 33, printer=Prindenter()):
     # 32 bytes for the md5 plus 1 for the comma times a million rows
 
     # limiting it here because I'd prefer too many small queries over a few monsters
@@ -108,20 +121,20 @@ def get_max_md5_rows(cursor, try_set=1000001 * 33, printer=Prindenter()):
 
         # try to ask for enough space for 1 million rows at a time
         printer("Asking for lots lof space...")
-        result = show_do_query(cursor, "set session group_concat_max_len = {};".format(try_set)
+        result = show_do_query(cursor, "set session group_concat_max_len = {};".format(try_set), printer=printer)
 
         # but accept what we're given
         printer("Taking what we can get...")
         result = show_do_query(cursor, "show variables where Variable_name = 'group_concat_max_len';" , printer=printer)
-        max_group_concat_bytes = result[0]['Value']
+        max_group_concat_bytes = int(result[0]['Value'])
 
         # and see how many rows that is
         printer("How many of these will fit?")
-        result = show_do_query(cursor, "select length(concat(md5('foo'),','));" , printer=printer)
-        md5_bytes = result[0]['md5_bytes']# for the comma
+        result = show_do_query(cursor, "select length(concat(md5('foo'),',')) as md5_bytes;" , printer=printer);
+        md5_bytes = int(result[0]['md5_bytes'])
 
     rows = floor(max_group_concat_bytes / md5_bytes)
-    printer(rows + " rows")
+    printer("{} rows".format(rows))
     return rows
 
 def get_max_id(cursor, table_name, id_col='id', printer=Prindenter()):
@@ -141,19 +154,32 @@ def find_diff_intervals(remote_cursor, local_cursor, table_name, intervals, id_c
 
     has_diffs = []
 
-    for interval in intervals:
-        local_fingerprint = md5_row_range(local_cursor, table_name, interval, id_col=id_col, printer=printer)
-        remote_fingerprint = md5_row_range(remote_cursor, table_name, interval, id_col=id_col, printer=printer)
+    printer("Examining table formats on either side]")
+    with Indent(printer):
+        local_columns = examine_columns(local_cursor, table_name, printer=printer)
+        remote_columns = examine_columns(remote_cursor, table_name, printer=printer)
 
-        if local_fingerprint == remote_fingerprint:
-            printer("{} needs NO sync".format(interval))
-        else:
-            printer("{} needs sync".format(interval))
-            has_diffs.append(interval)
+    printer("[Scanning intervals for changes]")
+    with Indent(printer):
+        for interval in intervals:
+
+            printer("[Scanning {}]".format(interval))
+            with Indent(printer):
+                local_fingerprint = md5_row_range(local_cursor, table_name, local_columns, interval,
+                                                  id_col=id_col, printer=printer)
+
+                remote_fingerprint = md5_row_range(remote_cursor, table_name, remote_columns, interval,
+                                                   id_col=id_col, printer=printer)
+
+            if local_fingerprint == remote_fingerprint:
+                printer("{} NO SYNC NEEDED\n".format(interval))
+            else:
+                printer("{} NEEDS SYNC\n".format(interval))
+                has_diffs.append(interval)
 
     return has_diffs
 
-def warn_if_not_equal(remote_cursor, local_cursor, table_name, printer=Printdenter()):
+def warn_if_not_equal(remote_cursor, local_cursor, table_name, printer=Prindenter()):
     printer("[Checking table equality for {}]".format(table_name))
 
     with Indent(printer):
@@ -174,9 +200,8 @@ def warn_if_not_equal(remote_cursor, local_cursor, table_name, printer=Printdent
 
 # this works for tables that only experience INSERTs, it just checks on max(id)
 # and syncs the deficit
-def pull_missing_ids(table_name, local_args, remote_connection, printer=Prindenter()):
+def pull_missing_ids(table_name, cli_args, local_args, remote_connection, printer=Prindenter()):
 
-    global cli_args
     target = 'max(id)';
     get_max_id = 'select {} from {};'.format(target, table_name)
 
@@ -221,21 +246,21 @@ def pull_missing_ids(table_name, local_args, remote_connection, printer=Prindent
     with LocalConnection(local_args) as local_connection:
         with local_connection.cursor() as local_cursor:
             with remote_connection.cursor() as remote_cursor:
-                warn_if_not_equal(remote_cursor, local_cursor, table_name, printer=printer):
+                warn_if_not_equal(remote_cursor, local_cursor, table_name, printer=printer)
 
     # return max id
     return end
 
 # used for tables that don't have a more specific strategy
-def general_syc(table_name, interval_size, local_args, remote_connection, printer=Prindenter()):
+def general_sync(table_name, interval_size, cli_args, local_args, remote_connection, printer=Prindenter()):
 
-    printer("[Syncing new rows for table {}]".format(table_name)
+    printer("[Syncing new rows for table {}]".format(table_name))
     with Indent(printer):
 
         # get any new rows
-        max_id = pull_missing_ids(table_name, local_args, remote_connection, printer=printer)
+        max_id = pull_missing_ids(table_name, cli_args, local_args, remote_connection, printer=printer)
 
-    printer("[Scanning for diffs in table {}]".format(table_name)
+    printer("[Scanning for diffs in table {}]".format(table_name))
     with Indent(printer):
 
         with LocalConnection(local_args) as local_connection:
@@ -252,21 +277,21 @@ def general_syc(table_name, interval_size, local_args, remote_connection, printe
                     diff_intervals = find_diff_intervals(remote_cursor, local_cursor, table_name, intervals,
                                                          printer=printer)
 
-    printer("[Transferring for diffs in table {}]".format(table_name)
+    printer("[Transferring for diffs in table {}]".format(table_name))
     with Indent(printer):
 
         for interval in diff_intervals:
 
-            condition = 'id =< {} and id >= {}'.format(interval.start, interval.end)
+            condition = 'id <= {} and id >= {}'.format(interval.start, interval.end)
 
             # dump remote data
-            mysqldump_data_remote(cli_args, table_name, condidtion, printer=printer)
+            mysqldump_data_remote(cli_args, table_name, condition, printer=printer)
 
             # clear old rows from local
             delete = 'delete from {} where {};'.format(table_name, condition)
             with LocalConnection(local_args) as local_connection:
                 with local_connection.cursor() as cursor:
-                    show_do_query(cursor, , printer=printer)
+                    show_do_query(cursor, delete, printer=printer)
 
             # load new rows into local
             mysqlload_local(cli_args, table_name, printer=printer)
@@ -275,4 +300,4 @@ def general_syc(table_name, interval_size, local_args, remote_connection, printe
     with LocalConnection(local_args) as local_connection:
         with local_connection.cursor() as local_cursor:
             with remote_connection.cursor() as remote_cursor:
-                warn_if_not_equal(remote_cursor, local_cursor, table_name, printer=printer):
+                warn_if_not_equal(remote_cursor, local_cursor, table_name, printer=printer)

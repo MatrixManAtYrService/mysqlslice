@@ -4,6 +4,7 @@ import argparse
 import subprocess
 import os
 import re
+from pprint import pformat
 from sh import bash, awk, netstat, mysql
 from mysqlslice.mysql import LocalArgs, RemoteArgs
 
@@ -252,10 +253,10 @@ def show_do_query(cursor,
     with Indent(printer):
         printer('[Query]')
         with Indent(printer):
-            printer(query)
+            printer(textwrap.dedent(query))
             do(cursor, query)
         printer('[Result]')
         with Indent(printer):
             result = get(cursor)
-            printer(result)
+            printer(pformat(result))
     return result
