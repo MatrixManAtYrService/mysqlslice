@@ -34,8 +34,8 @@ echo "Initializing some tables in 'things_upstream', same data goes in 'things_d
 echo "Making changes only in things_upstream"
 mysql -uroot -ptest -e "source sql/init.sql;" | sed 's/^/    /g'
 
-echo "Here they are before the sync"
-mysql -uroot -ptest -t -e "source sql/show_everything.sql;" | sed 's/^/    /g'
+# echo "Here they are before the sync"
+# mysql -uroot -ptest -t -e "source sql/show_everything.sql;" | sed 's/^/    /g'
 
 control_before="$(mysql -uroot -ptest -e "use things_upstream; source sql/show_one_side.sql;" | md5sum)"
 experimental_before="$(mysql -uroot -ptest -e "use things_downstream; source sql/show_one_side.sql;" | md5sum)"
@@ -46,8 +46,8 @@ pull_slice | sed 's/^/    /g'
 control_after="$(mysql -uroot -ptest -e "use things_upstream; source sql/show_one_side.sql;" | md5sum)"
 experimental_after="$(mysql -uroot -ptest -e "use things_downstream; source sql/show_one_side.sql;" | md5sum)"
 
-echo "Here they are after the sync"
-mysql -uroot -ptest -t -e "source sql/show_everything.sql;" | sed 's/^/    /g'
+# echo "Here they are after the sync"
+# mysql -uroot -ptest -t -e "source sql/show_everything.sql;" | sed 's/^/    /g'
 
 report "$control_before" "$experimental_before" "$control_after" "$experimental_after" "Sync-after-changes"
 

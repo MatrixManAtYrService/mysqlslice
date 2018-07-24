@@ -228,8 +228,19 @@ def pull_missing_ids(table_name, cli_args, local_args, remote_connection, printe
             result = show_do_query(cursor, get_max_id, printer=printer)
             end = result[0][target] or 0
 
+    if end == begin:
+        printer("Nothing to sync")
 
-    if end != begin:
+    # check for local changes beyond max_id for remote db and clobber them (this is a one-way sync)
+    elif end < begin:
+        with LocalConnection(local_args) as local_connection:
+            with local_connection.cursor() as cursor:
+                printer("Downstream db has more rows, deleting them.")
+                delete = 'delete from {} where id > {};'.format(table_name, end)
+                with Indent(printer):
+                    result = show_do_query(cursor, delete, printer=printer)
+    else:
+        printer("Upstream db has more rows, pulling them.")
 
         # dump to a file
         if begin == None:
@@ -252,9 +263,6 @@ def pull_missing_ids(table_name, cli_args, local_args, remote_connection, printe
 
         # load from a file
         mysqlload_local(cli_args, table_name, printer=printer)
-
-    else:
-        printer("nothing to do")
 
     with LocalConnection(local_args) as local_connection:
         with local_connection.cursor() as local_cursor:

@@ -288,7 +288,7 @@ use things_downstream;
 
 -- this is where we make changes to see if they can be synced
 
--- changes occur only in the remote database
+-- changes in the remote database (we expect these to appear downstream after sync)
 use things_upstream;
 
 -- new tokens
@@ -314,3 +314,19 @@ update bar set val = 0 where id in (49, 98, 998, 999);
 -- just add values here
 insert into baz (val) values
 (20), (21), (22), (23), (24), (25), (26), (27), (28), (29);
+
+-- We should tolerate the case below (uncomment to verify)
+-- but it's not the typical case, so leaving it commented out
+
+-- changes in the local database (we expect these to get clobbered during the sync)
+-- use things_downstream;
+
+-- insert into baz (val) values
+-- (20), (21), (22), (23), (24), (25), (26), (27), (28), (29), -- upstream added these too
+-- (30), (31), (32), (33), (34), (35), (36), (97), (98), (99); -- but these are extra
+
+-- delete from bar where id > 5 and id < 15;
+-- delete from bar where id = 900;
+
+-- insert into bar (val) values
+-- (80), (81), (82), (88), (84), (85), (86), (97), (98), (99), (10), (11), (12), (11), (14), (15), (16), (97), (91), (99);
