@@ -7,26 +7,31 @@ from mysqlslice.mysql import LocalConnection, LocalArgs, RemoteConnection, Remot
 from mysqlslice.sync import general_sync, pull_foo, pull_missing_ids
 
 
-# different tables may require different functionality for syncing
-# map that functionality on a table-by-table basis here
+# Different tables may require different functionality for syncing.
+# Map that functionality on a table-by-table basis here.
 def get_steps(cli_args, local_args, remote_connection, printer=Prindenter()):
 
     return {
-            # this table gets it's own sync function
             'foo_tokens' : lambda : pull_foo(cli_args, local_args, remote_connection, printer=printer),
+            # 'foo' gets it's own sync function.
+            # It pulls only a subset of `foo_ref` and then pulls only the subset of `foo_token`that is referenced by `foo_ref`.
+            # It always clobbers the entire target table with the new data.
 
-            # this table also handled by pull_foo
             'foo_ref'    : None,
+            # This table also handled by pull_foo
 
-            # this table experiences INSERTs, DELETEs, and UPDATEs, so it needs a full sync
-            #      based on its size, we'll sync it in batches of 15
-            #      too large means we spend less time finding the changes and more time moving data
-            #      too small means we spend more time finding the changes and less time moving data
-            #      consider network bandwith vs how precious server cpu time is
             'bar' : lambda : general_sync('bar', 15, cli_args, local_args, remote_connection, printer=printer),
+            # 'bar' experiences INSERTs, DELETEs, and UPDATEs, so it needs a full sync
+            # gerenal_sync first calls pull_missing_id, so any newly added rows are present in the target.
+            #   Then it partitions the table based on id-range and compares MD5 hashes of each partition, and
+            #   then it transfers whichever partitions contained changes.
+            # Based on its size, we'll sync it in batches of 15
+            #   too large means we spend less time finding the changes and more time moving data
+            #   too small means we spend more time finding the changes and less time moving data
+            #   consider the relative value of network bandwith vs cpu time in your own case
 
-            # this table only experiences INSERTs, so we can just sync via max(id)
             'baz' : lambda : pull_missing_ids('baz', cli_args, local_args, remote_connection, printer=printer),
+            # this table only experiences INSERTs, so we can just sync via max(id)
             }
 
 
@@ -61,7 +66,7 @@ def main(args):
                     printer("")
                 else:
                     with Indent(printer):
-                        printer("skipped")
+                        printer("skipped explicitly by slice definition")
                         printer("")
 
     printer('Done')

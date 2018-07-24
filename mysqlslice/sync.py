@@ -37,6 +37,8 @@ def pull_foo(cli_args, local_args, remote_connection, printer=Prindenter()):
     mysqlload_local(cli_args, 'foo_ref', printer=printer)
     mysqlload_local(cli_args, 'foo_tokens', printer=printer)
 
+    printer("foo_tokens and foo_ref are up to date where it matters")
+
 # not all columns can be concatenated (i.e. NULL)
 # this gets the list of columns and figures out how to make them concatenatabale
 def examine_columns(cursor, table_name, printer=Prindenter()):
@@ -179,7 +181,7 @@ def find_diff_intervals(remote_cursor, local_cursor, table_name, intervals, id_c
 
     return has_diffs
 
-def warn_if_not_equal(remote_cursor, local_cursor, table_name, printer=Prindenter()):
+def is_equal(remote_cursor, local_cursor, table_name, printer=Prindenter()):
     printer("[Checking table equality for {}]".format(table_name))
 
     with Indent(printer):
@@ -193,10 +195,16 @@ def warn_if_not_equal(remote_cursor, local_cursor, table_name, printer=Prindente
 
         if remote_checksum != local_checksum:
             printer("WARNING: {} differs, even after sync!".format(table_name))
+            return False
         else:
+            return True
             printer("{} is identical on either side".format(table_name))
 
-
+def warn_if_not_equal(remote_cursor, local_cursor, table_name, printer=Prindenter()):
+    if is_equal(remote_cursor, local_cursor, table_name, printer):
+        printer("{} is identical on either side".format(table_name))
+    else:
+        printer("WARNING: {} differs, even after sync!".format(table_name))
 
 # this works for tables that only experience INSERTs, it just checks on max(id)
 # and syncs the deficit
@@ -209,12 +217,17 @@ def pull_missing_ids(table_name, cli_args, local_args, remote_connection, printe
     # then mysqlload_local (below) can't make its own separate connection
     with LocalConnection(local_args) as local_connection:
         with local_connection.cursor() as cursor:
-            result = show_do_query(cursor, get_max_id, printer=printer)
-            begin = result[0][target]
+            printer("Finding max(id) for {}.{}".format(table_name, cursor.connection.db))
+            with Indent(printer):
+                result = show_do_query(cursor, get_max_id, printer=printer)
+                begin = result[0][target] or 0
 
     with remote_connection.cursor() as cursor:
-        result = show_do_query(cursor, get_max_id, printer=printer)
-        end = result[0][target]
+        printer("Finding max(id) for {}.{}".format(table_name, cursor.connection.db))
+        with Indent(printer):
+            result = show_do_query(cursor, get_max_id, printer=printer)
+            end = result[0][target] or 0
+
 
     if end != begin:
 
@@ -254,18 +267,27 @@ def pull_missing_ids(table_name, cli_args, local_args, remote_connection, printe
 # used for tables that don't have a more specific strategy
 def general_sync(table_name, interval_size, cli_args, local_args, remote_connection, printer=Prindenter()):
 
-    printer("[Syncing new rows for table {}]".format(table_name))
-    with Indent(printer):
+    # Check to see if work needs to be done
+    with LocalConnection(local_args) as local_connection:
+        with local_connection.cursor() as local_cursor:
+            with remote_connection.cursor() as remote_cursor:
 
-        # get any new rows
-        max_id = pull_missing_ids(table_name, cli_args, local_args, remote_connection, printer=printer)
+                if is_equal(remote_cursor, local_cursor, table_name, printer):
+                    printer("{} is identical on either side".format(table_name))
+                    return
 
-    printer("[Scanning for diffs in table {}]".format(table_name))
-    with Indent(printer):
+                printer("[Syncing new rows for table {}]".format(table_name))
+                with Indent(printer):
 
-        with LocalConnection(local_args) as local_connection:
-            with local_connection.cursor() as local_cursor:
-                with remote_connection.cursor() as remote_cursor:
+                    # get any new rows
+                    max_id = pull_missing_ids(table_name, cli_args, local_args, remote_connection, printer=printer)
+
+                if is_equal(remote_cursor, local_cursor, table_name, printer):
+                    printer("{} is identical on either side".format(table_name))
+                    return
+
+                printer("[Scanning for diffs in table {}]".format(table_name))
+                with Indent(printer):
 
                     # find which id-ranges have changes that need syncing
                     remote_max = get_max_md5_rows(remote_cursor, printer=printer)
@@ -282,7 +304,7 @@ def general_sync(table_name, interval_size, cli_args, local_args, remote_connect
 
         for interval in diff_intervals:
 
-            condition = 'id <= {} and id >= {}'.format(interval.start, interval.end)
+            condition = 'id >= {} and id <= {}'.format(interval.start, interval.end)
 
             # dump remote data
             mysqldump_data_remote(cli_args, table_name, condition, printer=printer)

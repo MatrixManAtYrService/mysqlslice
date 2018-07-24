@@ -112,3 +112,4 @@ bar.sql
 foo_ref.sql
 foo_tokens.sql
 baz.sql
+schema_nofk.sql

@@ -1,14 +1,9 @@
 #! /usr/bin/env python3
-from bslice.cli import parse_pull_args, Prindenter, Indent, mysqldump_schema_nofk_remote, mysqlload_local, show_do_query
-from bslice.mysql import LocalConnection, LocalArgs, RemoteConnection, RemoteArgs
+from mysqlslice.cli import parse_pull_args, Prindenter, Indent, mysqldump_schema_nofk_remote, mysqlload_local, show_do_query
+from mysqlslice.mysql import LocalConnection, LocalArgs, RemoteConnection, RemoteArgs
 
-# global to this module, will be populated when main() is called
-# contains cli args
-cli_args = None
+def pull_schema(cli_args, local_args, remote_connection, printer=Prindenter()):
 
-def pull_schema(local_args, remote_connection, printer=Prindenter()):
-
-    global cli_args
     target_db = local_args.database
 
     with LocalConnection(local_args) as local_connection:
@@ -18,7 +13,6 @@ def pull_schema(local_args, remote_connection, printer=Prindenter()):
             table_ct = len(result)
 
     if table_ct > 0:
-
         printer("{} is a nonempty local database. "
                 "If you want me to create a new database in its place, you'll have to drop and create it yourself.".format(target_db))
                 # if you'd rather I nuke it for you, you're trusting me too much
@@ -36,21 +30,20 @@ def pull_schema(local_args, remote_connection, printer=Prindenter()):
 def main(args):
     printer = Prindenter(indent=0)
 
-    printer('Pulling schema from {} to localhost'.format(args.p801_host))
+    printer('Pulling schema from {} to localhost'.format(args.remote_host))
 
     # defer local connection setup
-    local_args = LocalArgs(args.local_user, args.local_password, args.local_database)
+    local_args = LocalArgs(args.local_user, args.local_password, args.local_database, args.local_socket)
 
     # set up remote connection
-    remote_args = RemoteArgs(args.p801_host, args.p801_user, args.p801_password, args.p801_database, 'DHE-RSA-AES256-SHA')
+    remote_args = RemoteArgs(args.remote_host, args.remote_user, args.remote_password, args.remote_database, args.cipher)
     with RemoteConnection(remote_args) as remote_connection, Indent(printer):
-        pull_schema(local_args, remote_connection, printer=printer)
+        pull_schema(args, local_args, remote_connection, printer=printer)
 
     printer('Done')
 
 # used as entrypoint in setup.py
 def pull():
-    global cli_args
     cli_args = parse_pull_args('start with an empty database and replace it with the frail empty shell of a remote database (schema only, no foreign keys)')
     main(cli_args)
 

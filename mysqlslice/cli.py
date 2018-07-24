@@ -8,43 +8,6 @@ from pprint import pformat
 from sh import bash, awk, netstat, mysql
 from mysqlslice.mysql import LocalArgs, RemoteArgs
 
-# Printing Messages to the Caller
-# ===============================
-
-# print status to stderr so that only the requested value is written to stdout
-# (the better for consumption by a caller in code)
-# default to a four-space indent
-class Prindenter:
-    def __init__(self, indent=4, file=sys.stderr):
-        self.indent = indent
-        self.at_line_begin = True
-        self.file = file
-
-    def __call__(self, msg, end='\n'):
-
-        if self.at_line_begin:
-            this_indent = self.indent
-        else:
-            this_indent =  0
-
-        if end is '':
-            self.at_line_begin = False
-        else:
-            self.at_line_begin = True
-
-        print(textwrap.indent(msg.__str__(), ' ' * this_indent), file=self.file, end=end)
-
-# Increments the intent depth for a Prindenter
-class Indent:
-    def __init__(self, printer):
-        self.printer = printer
-
-    def __enter__(self):
-        self.printer.indent += 4
-
-    def __exit__(self, type, value, traceback):
-        self.printer.indent -= 4
-
 # Parsing Command Line Aguments
 # =============================
 
@@ -87,6 +50,44 @@ def parse_pull_args(desc=None):
     parser.add_argument('-c', '--cipher')
 
     return parser.parse_args()
+
+# Printing Messages to the Caller
+# ===============================
+
+# print status to stderr so that only the requested value is written to stdout
+# (the better for consumption by a caller in code)
+# default to a four-space indent
+class Prindenter:
+    def __init__(self, indent=4, file=sys.stderr):
+        self.indent = indent
+        self.at_line_begin = True
+        self.file = file
+
+    def __call__(self, msg, end='\n'):
+
+        if self.at_line_begin:
+            this_indent = self.indent
+        else:
+            this_indent =  0
+
+        if end is '':
+            self.at_line_begin = False
+        else:
+            self.at_line_begin = True
+
+        print(textwrap.indent(msg.__str__(), ' ' * this_indent), file=self.file, end=end)
+
+# Increments the intent depth for a Prindenter
+class Indent:
+    def __init__(self, printer):
+        self.printer = printer
+
+    def __enter__(self):
+        self.printer.indent += 4
+
+    def __exit__(self, type, value, traceback):
+        self.printer.indent -= 4
+
 
 # Executing External Commands
 # ===========================
@@ -249,7 +250,7 @@ def show_do_query(cursor,
         get=lambda cursor: cursor.fetchall(),
         printer=Prindenter()):
 
-    printer('[MySQL @ {}]'.format(cursor.connection.host))
+    printer('[MySQL @ {}, database: {}]'.format(cursor.connection.host, cursor.connection.db))
     with Indent(printer):
         printer('[Query]')
         with Indent(printer):

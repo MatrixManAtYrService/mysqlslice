@@ -53,6 +53,7 @@ class LocalConnection(Connection):
     def __enter__(self):
         self.connection = pymysql.connect(user=self.args.user,
                                           passwd=self.args.password,
+                                          autocommit=True,
                                           cursorclass=pymysql.cursors.DictCursor)
 
         # store this explicitly since it doesn't get populated on connection
@@ -63,6 +64,7 @@ class RemoteConnection(Connection):
     def __enter__(self):
 
         # build ssl args
+        print(self.args.cipher)
         if self.args.cipher != None:
             ssl = { 'cipher' : self.args.cipher }
         else:
@@ -72,6 +74,7 @@ class RemoteConnection(Connection):
                                           user=self.args.user,
                                           passwd=self.args.password,
                                           ssl=ssl,
+                                          autocommit=True,
                                           cursorclass=pymysql.cursors.DictCursor)
 
         # store this explicitly since it doesn't get populated on connection

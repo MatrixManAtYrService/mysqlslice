@@ -11,8 +11,8 @@ create table foo_tokens (id int not null auto_increment,
 
 -- (we're just *pretending* this table is too long to sync normally, no need to make it actually huge)
 insert into foo_tokens (token) values ('a'), ('b'), ('c'), ('d'), ('e'), ('f'), ('g'),
-('h'), ('i'), ('j'), ('k'), ('l'), ('m'), ('n'), ('o'), ('p'), ('q'), ('r'), ('s'), 
-('t'), ('u'), ('v'), ('w'), ('x'), ('y'), ('z'); 
+('h'), ('i'), ('j'), ('k'), ('l'), ('m'), ('n'), ('o'), ('p'), ('q'), ('r'), ('s'),
+('t'), ('u'), ('v'), ('w'), ('x'), ('y'), ('z');
 
 
 -- a table which provides indices into the big table
@@ -21,7 +21,7 @@ create table foo_ref (id int not null auto_increment,
                          foo_token_id int not null,
                          primary key (id));
 
-insert into foo_ref (name, foo_token_id) values 
+insert into foo_ref (name, foo_token_id) values
 ('dumb', 21), ('dumb', 22), ('relevant A', 23),
 ('relevant AA', 24), ('relevant B', 25), ('dumb', 26);
 
@@ -289,7 +289,7 @@ use things_downstream;
 -- this is where we make changes to see if they can be synced
 
 -- changes occur only in the remote database
-use things_downstream;
+use things_upstream;
 
 -- new tokens
 insert into foo_tokens (token) values ('A'), ('B');
